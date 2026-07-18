@@ -424,6 +424,7 @@ canvas {
               <video id="video" autoplay playsinline class="w-full aspect-[4/3] rounded-xl object-cover bg-black border border-slate-800"></video>
               <div class="flex gap-2 w-full">
                 <button type="button" onclick="captureWebcam()" class="flex-1 bg-theme-primary hover:bg-theme-primaryHover text-white py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1"><i class="fa-solid fa-circle"></i> Ambil Foto</button>
+                <button type="button" onclick="switchCamera()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1"><i class="fa-solid fa-camera-rotate"></i> Putar Kamera</button>
                 <button type="button" onclick="stopWebcam()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 rounded-lg font-bold text-xs"><i class="fa-solid fa-xmark"></i> Batal</button>
               </div>
             </div>
@@ -1030,7 +1031,7 @@ canvas {
 <!-- SCRIPT LOGIC -->
 <script>
 const IS_PREVIEW = false; // UBAH KE false JIKA AKAN DI-DEPLOY KE GOOGLE APPS SCRIPT
-const GAS_URL = "https://script.google.com/macros/s/AKfycbw1UE7gavN8SgfHdkvJZKwFdKnCqR-oT4U5kyBvAlf3Dxr6rFOV4TEBHl9Cx6LAI_XMZA/exec";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyWtAqEFfddZUoRiT_4joVvh9JXvdlybOCQAtLlOMa-1imrTrLk5K-gNxZfGIiSBjXp/exec";
 
 const DEFAULT_LOGO_KPU = "https://www.kpu.go.id/images/1627539868logo-kpu.png";
 
@@ -1153,17 +1154,28 @@ function setStarRating(rating) {
 }
 
 // Media Capturing (Webcam)
+let currentFacingMode = "user";
 async function startWebcam() {
   const video = document.getElementById('video');
   const container = document.getElementById('webcamContainer');
   container.classList.remove('hidden');
+  
+  if (typeof localStream !== 'undefined' && localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+  }
+
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } });
     video.srcObject = localStream;
   } catch (err) {
     alertBox('guestAlert', 'Tidak dapat memuat kamera: ' + err.message, 'error');
     container.classList.add('hidden');
   }
+}
+
+function switchCamera() {
+  currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+  startWebcam();
 }
 
 function stopWebcam() {
