@@ -579,7 +579,8 @@ canvas {
                   <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
                     <th class="p-4 text-center">No</th>
                     <th class="p-4">Foto</th>
-                    <th class="p-4">Nama / No. WA</th>
+                    <th class="p-4">Nama</th>
+                    <th class="p-4">No. WA</th>
                     <th class="p-4">Instansi</th>
                     <th class="p-4">Keperluan</th>
                     <th class="p-4 text-center">Tanggal</th>
@@ -685,7 +686,8 @@ canvas {
                   <tr class="bg-slate-50 border-y border-slate-300 font-bold text-slate-800 uppercase tracking-tight text-[10px]">
                     <th class="p-3 text-center border border-slate-300">No</th>
                     <th class="p-3 text-center border border-slate-300">Foto</th>
-                    <th class="p-3 border border-slate-300">Nama / No. WA</th>
+                    <th class="p-3 border border-slate-300">Nama</th>
+                    <th class="p-3 border border-slate-300">No. WA</th>
                     <th class="p-3 border border-slate-300">Instansi</th>
                     <th class="p-3 border border-slate-300">Keperluan</th>
                     <th class="p-3 text-center border border-slate-300">Tanggal</th>
@@ -920,6 +922,12 @@ canvas {
               <label class="text-xs font-bold text-slate-700 block">Pilihan Keperluan Kunjungan</label>
               <p class="text-[10px] text-slate-500">Pisahkan dengan koma.</p>
               <textarea id="cfgKeperluanOptions" class="w-full p-3 rounded-xl border border-slate-200 outline-none focus:border-theme-primary text-sm" rows="3" placeholder="Konsultasi Hukum, Koordinasi Pemilihan, Penyerahan Dokumen"></textarea>
+            </div>
+            
+            <div class="space-y-3 border-t border-slate-100 pt-5">
+              <label class="text-xs font-bold text-slate-700 block">Pesan Notifikasi Tamu (WhatsApp)</label>
+              <p class="text-[10px] text-slate-500">Pesan ini akan dikirim saat Anda klik No. WA tamu di tabel.</p>
+              <textarea id="cfgPesanTamu" class="w-full p-3 rounded-xl border border-slate-200 outline-none focus:border-theme-primary text-sm" rows="4" placeholder="Ketik pesan notifikasi untuk tamu di sini..."></textarea>
             </div>
             <button type="submit" class="w-full bg-theme-primary hover:bg-theme-primaryHover text-white py-3 rounded-xl font-bold text-xs"><i class="fa-solid fa-circle-check mr-1"></i> Terapkan Pengaturan Umum</button>
 
@@ -1352,6 +1360,9 @@ function applyUiSettings() {
   const kepVal = systemSettings.keperluan_options || defaultKep;
   document.getElementById('cfgKeperluanOptions').value = kepVal;
   
+  const defaultPesanTamu = 'Terima kasih telah berkunjung ke KPU Kabupaten Tanjung Jabung Timur. Mohon kesediaan Bapak/Ibu untuk mengisi Survei Kepuasan Masyarakat (SKM) melalui tautan berikut. Penilaian Anda sangat berarti untuk peningkatan kualitas pelayanan kami.';
+  document.getElementById('cfgPesanTamu').value = systemSettings.pesan_tamu || defaultPesanTamu;
+  
   const kepSelect = document.getElementById('keperluan');
   if (kepSelect) {
     const kepOpts = kepVal.split(',').map(s => s.trim()).filter(Boolean);
@@ -1560,7 +1571,7 @@ function generateReport() {
 
   const rptBody = document.getElementById('rptTableRows');
   if (filtered.length === 0) {
-    rptBody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-400 font-semibold italic border border-slate-300">Tidak ada data kunjungan pada periode ini.</td></tr>`;
+    rptBody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-slate-400 font-semibold italic border border-slate-300">Tidak ada data kunjungan pada periode ini.</td></tr>`;
   } else {
     rptBody.innerHTML = filtered.map((g, idx) => `
       <tr class="border-b border-slate-300 text-[11px] hover:bg-slate-50 transition-colors">
@@ -1568,10 +1579,8 @@ function generateReport() {
         <td class="p-2 text-center border border-slate-300">
           ${g.foto ? `<img src="${g.foto}" class="h-12 w-10 object-cover rounded border border-slate-200 mx-auto">` : '<span class="text-[9px] text-slate-400 italic">No Photo</span>'}
         </td>
-        <td class="p-3 border border-slate-300">
-          <span class="font-bold text-slate-900 block">${g.nama}</span>
-          <span class="text-[9px] text-slate-400 block">${g.nip || '-'}</span>
-        </td>
+        <td class="p-3 border border-slate-300 font-bold text-slate-900">${g.nama}</td>
+        <td class="p-3 border border-slate-300 text-slate-600">${g.nip || '-'}</td>
         <td class="p-3 border border-slate-300 font-semibold text-slate-700">${g.instansi}</td>
         <td class="p-3 border border-slate-300 text-slate-600">${g.keperluan}</td>
         <td class="p-3 text-center border border-slate-300 font-medium">${fmtDate(g.tanggal)}</td>
@@ -1836,6 +1845,40 @@ function closeWaModal() {
   document.getElementById('waModal').classList.add('hidden');
 }
 
+
+
+function sendWaToGuestTamu(guestId) {
+  try {
+    const guest = allGuests.find(item => String(item.id) === String(guestId));
+    if (!guest || !guest.nip || guest.nip === '-') {
+      alertBox('adminAlert', 'No. WA tidak tersedia untuk tamu ini.', 'error');
+      return;
+    }
+    
+    let phone = String(guest.nip).replace(/\D/g, '');
+    if (phone.startsWith('0')) phone = '62' + phone.substring(1);
+    else if (phone.startsWith('8')) phone = '62' + phone;
+
+    if (!/^62\d{8,13}$/.test(phone)) {
+      alertBox('adminAlert', 'Nomor WA tamu tidak valid.', 'error');
+      return;
+    }
+
+    const defaultPesanTamu = 'Terima kasih telah berkunjung ke KPU Kabupaten Tanjung Jabung Timur. Mohon kesediaan Bapak/Ibu untuk mengisi Survei Kepuasan Masyarakat (SKM) melalui tautan berikut. Penilaian Anda sangat berarti untuk peningkatan kualitas pelayanan kami.';
+    const message = systemSettings.pesan_tamu || defaultPesanTamu;
+    
+    const waUrl = 'https://wa.me/' + phone + '?text=' + encodeURIComponent(message);
+    const waWindow = window.open(waUrl, '_blank');
+    if (!waWindow) {
+      window.location.href = waUrl;
+      return;
+    }
+  } catch (error) {
+    console.error('Gagal membuka WhatsApp:', error);
+    alertBox('adminAlert', 'Terjadi kesalahan.', 'error');
+  }
+}
+
 function sendWaToEmployee() {
   try {
     const employeeId = document.getElementById('notifyPegawai')?.value;
@@ -1897,7 +1940,8 @@ async function saveGeneralSettings(e) {
   const isTtdReq = document.getElementById('cfgTtdRequired').checked ? 'true' : 'false';
   const keperluanOpts = document.getElementById('cfgKeperluanOptions').value;
 
-  let updatedSettings = { ...systemSettings, theme_color: themeVal, nip_required: isNipReq, foto_required: isFotoReq, ttd_required: isTtdReq, keperluan_options: keperluanOpts };
+    const pesanTamu = document.getElementById('cfgPesanTamu').value;
+  let updatedSettings = { ...systemSettings, theme_color: themeVal, nip_required: isNipReq, foto_required: isFotoReq, ttd_required: isTtdReq, keperluan_options: keperluanOpts, pesan_tamu: pesanTamu };
 
   let r = await api('save_settings', updatedSettings);
   if (r.status === 'success') {
@@ -2017,10 +2061,8 @@ function renderGuests() {
     <tr class="hover:bg-slate-50 transition-colors">
       <td class="p-4 text-center font-bold text-slate-400">${i + 1}</td>
       <td class="p-4">${x.foto ? `<img class="w-10 h-12 object-cover rounded-lg border shadow-sm" src="${x.foto}">` : '<div class="w-10 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300"><i class="fa-solid fa-image"></i></div>'}</td>
-      <td class="p-4">
-        <span class="font-bold text-slate-800 block">${x.nama}</span>
-        <span class="text-[10px] text-slate-400 font-semibold">${x.nip || '-'}</span>
-      </td>
+      <td class="p-4 font-bold text-slate-800">${x.nama}</td>
+      <td class="p-4">${x.nip && x.nip !== '-' ? `<button onclick="sendWaToGuestTamu('${x.id}')" class="text-xs text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-md font-bold flex items-center gap-1.5 transition-colors"><i class="fa-brands fa-whatsapp"></i> ${x.nip}</button>` : '<span class="text-[10px] text-slate-400 font-semibold">-</span>'}</td>
       <td class="p-4 font-semibold text-slate-600">${x.instansi}</td>
       <td class="p-4 text-slate-500 max-w-[150px] truncate">${x.keperluan}</td>
       <td class="p-4 text-center font-semibold text-slate-600">${fmtDate(x.tanggal)}</td>
