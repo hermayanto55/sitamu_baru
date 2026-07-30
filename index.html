@@ -291,6 +291,7 @@ canvas {
             <i class="fa-solid fa-arrow-right text-sm group-hover:translate-x-1.5 transition-transform"></i>
           </button>
         </div>
+        <div id="radiusAccessAlert" class="hidden max-w-2xl mx-auto mt-4 p-4 rounded-xl font-bold text-xs md:text-sm items-start gap-3 text-left"></div>
       </div>
     </section>
 
@@ -918,6 +919,35 @@ canvas {
               </div>
             </div>
             
+            <div class="space-y-4 border-t border-slate-100 pt-5">
+              <div>
+                <label class="text-xs font-bold text-slate-700 block">Pembatasan Radius Akses Buku Tamu</label>
+                <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">Jika diaktifkan, pengunjung hanya dapat membuka formulir Isi Buku Tamu ketika berada di dalam radius lokasi kantor. Fitur lokasi memerlukan HTTPS dan izin lokasi/GPS pada perangkat.</p>
+              </div>
+              <label class="flex items-center gap-3 cursor-pointer select-none rounded-xl border border-slate-200 p-3 bg-slate-50">
+                <input type="checkbox" id="cfgRadiusEnabled" class="w-4 h-4 rounded text-theme-primary accent-theme-primary">
+                <span class="text-xs font-semibold text-slate-700">Aktifkan pembatasan radius lokasi</span>
+              </label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="flex flex-col gap-1.5">
+                  <label class="text-xs font-bold text-slate-600">Latitude Kantor</label>
+                  <input id="cfgOfficeLatitude" type="number" step="any" min="-90" max="90" class="w-full h-11 px-4 border border-slate-200 focus:border-theme-primary rounded-xl text-sm outline-none" placeholder="Contoh: -1.123456">
+                </div>
+                <div class="flex flex-col gap-1.5">
+                  <label class="text-xs font-bold text-slate-600">Longitude Kantor</label>
+                  <input id="cfgOfficeLongitude" type="number" step="any" min="-180" max="180" class="w-full h-11 px-4 border border-slate-200 focus:border-theme-primary rounded-xl text-sm outline-none" placeholder="Contoh: 103.123456">
+                </div>
+                <div class="flex flex-col gap-1.5 sm:col-span-2">
+                  <label class="text-xs font-bold text-slate-600">Radius Akses (meter)</label>
+                  <input id="cfgAccessRadius" type="number" min="10" max="50000" step="1" value="200" class="w-full h-11 px-4 border border-slate-200 focus:border-theme-primary rounded-xl text-sm outline-none" placeholder="Contoh: 200">
+                </div>
+              </div>
+              <button type="button" onclick="captureOfficeLocation()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-bold text-xs border border-slate-200 transition-all">
+                <i class="fa-solid fa-location-crosshairs mr-1"></i> Gunakan Lokasi Perangkat Ini sebagai Titik Kantor
+              </button>
+              <div id="radiusConfigInfo" class="hidden p-3 rounded-xl text-xs font-semibold"></div>
+            </div>
+
             <div class="space-y-3 border-t border-slate-100 pt-5">
               <label class="text-xs font-bold text-slate-700 block">Pilihan Keperluan Kunjungan</label>
               <p class="text-[10px] text-slate-500">Pisahkan dengan koma.</p>
@@ -1070,6 +1100,10 @@ let systemSettings = {
   nip_required: "false",
   foto_required: "true",
   ttd_required: "true",
+  radius_enabled: "false",
+  office_latitude: "",
+  office_longitude: "",
+  access_radius_meters: "200",
   about_content: "Buku Tamu Digital ini disediakan oleh Komisi Pemilihan Umum Kabupaten Tanjung Jabung Timur guna menciptakan proses registrasi kunjungan dinas dan umum yang lebih cepat, terdokumentasi rapi, aman, serta menjamin keaslian data kunjungan melalui potret kamera langsung dan tanda tangan digital.",
   tata_cara: "1. Klik tombol 'Isi Buku Tamu Sekarang' di Halaman Depan.\n2. Isi seluruh identitas Anda dengan benar pada formulir yang disediakan.\n3. Ambil foto wajah Anda secara langsung menggunakan kamera atau unggah file foto.\n4. Bubuhkan tanda tangan digital Anda pada area kanvas abu-abu.\n5. Klik tombol 'Kirim & Simpan Kunjungan' untuk menyimpan data.",
   link_pengaduan: "https://tanjabtim.kpu.go.id/",
@@ -1132,12 +1166,120 @@ function clearSignature() {
   signed = false;
 }
 
-// Navigasi Screen
-function goToFormScreen() {
+// Navigasi Screen dan Validasi Radius Lokasi
+function showRadiusAccessMessage(message, type = 'info', persistent = false) {
+  const el = document.getElementById('radiusAccessAlert');
+  if (!el) return;
+  el.className = 'max-w-2xl mx-auto mt-4 p-4 rounded-xl font-bold text-xs md:text-sm flex items-start gap-3 text-left';
+  const styles = {
+    info: ['bg-blue-50', 'text-blue-700', 'border', 'border-blue-100'],
+    success: ['bg-emerald-50', 'text-emerald-700', 'border', 'border-emerald-100'],
+    error: ['bg-red-50', 'text-red-700', 'border', 'border-red-100']
+  };
+  el.classList.add(...(styles[type] || styles.info));
+  const icon = type === 'success' ? 'fa-circle-check' : (type === 'error' ? 'fa-circle-exclamation' : 'fa-location-crosshairs');
+  el.innerHTML = `<i class="fa-solid ${icon} text-lg mt-0.5 shrink-0"></i><span>${message}</span>`;
+  el.classList.remove('hidden');
+  if (!persistent) setTimeout(() => el.classList.add('hidden'), 6000);
+}
+
+function toRad(value) { return value * Math.PI / 180; }
+
+function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  const earthRadius = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function requestCurrentPosition(options = {}) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Perangkat atau browser ini tidak mendukung layanan lokasi.'));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+      ...options
+    });
+  });
+}
+
+async function goToFormScreen() {
+  const radiusEnabled = String(systemSettings.radius_enabled || 'false') === 'true';
+  if (radiusEnabled) {
+    const officeLat = Number(systemSettings.office_latitude);
+    const officeLng = Number(systemSettings.office_longitude);
+    const allowedRadius = Number(systemSettings.access_radius_meters || 200);
+
+    if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(allowedRadius) || allowedRadius < 10) {
+      showRadiusAccessMessage('Form belum dapat dibuka karena titik lokasi kantor atau radius akses belum dikonfigurasi dengan benar oleh administrator.', 'error', true);
+      return;
+    }
+
+    if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      showRadiusAccessMessage('Pemeriksaan lokasi memerlukan koneksi HTTPS. Silakan buka aplikasi melalui alamat HTTPS.', 'error', true);
+      return;
+    }
+
+    showRadiusAccessMessage('Sedang memeriksa lokasi Anda. Pastikan GPS aktif dan izinkan browser mengakses lokasi.', 'info', true);
+    try {
+      const position = await requestCurrentPosition();
+      const userLat = position.coords.latitude;
+      const userLng = position.coords.longitude;
+      const distance = calculateDistanceMeters(officeLat, officeLng, userLat, userLng);
+      const accuracy = Math.round(position.coords.accuracy || 0);
+
+      if (distance > allowedRadius) {
+        showRadiusAccessMessage(`Akses ditolak. Jarak Anda sekitar <strong>${Math.round(distance).toLocaleString('id-ID')} meter</strong> dari titik kantor, sedangkan radius yang diizinkan adalah <strong>${Math.round(allowedRadius).toLocaleString('id-ID')} meter</strong>. Akurasi lokasi perangkat ±${accuracy.toLocaleString('id-ID')} meter.`, 'error', true);
+        return;
+      }
+
+      showRadiusAccessMessage(`Lokasi terverifikasi. Anda berada sekitar <strong>${Math.round(distance).toLocaleString('id-ID')} meter</strong> dari titik kantor.`, 'success');
+    } catch (error) {
+      let message = 'Lokasi tidak dapat diperiksa. Pastikan GPS aktif dan izin lokasi diberikan.';
+      if (error && error.code === 1) message = 'Izin lokasi ditolak. Izinkan akses lokasi pada browser agar formulir buku tamu dapat dibuka.';
+      else if (error && error.code === 2) message = 'Lokasi perangkat tidak tersedia. Aktifkan GPS atau mode lokasi akurasi tinggi, lalu coba kembali.';
+      else if (error && error.code === 3) message = 'Pemeriksaan lokasi melewati batas waktu. Aktifkan GPS dan coba kembali.';
+      else if (error && error.message) message = error.message;
+      showRadiusAccessMessage(message, 'error', true);
+      return;
+    }
+  }
+
   document.getElementById('welcomeScreen').classList.add('hidden');
   document.getElementById('aboutScreen').classList.add('hidden');
   document.getElementById('formScreen').classList.remove('hidden');
   setTimeout(resize, 100);
+}
+
+async function captureOfficeLocation() {
+  const info = document.getElementById('radiusConfigInfo');
+  const setInfo = (message, type = 'info') => {
+    info.className = 'p-3 rounded-xl text-xs font-semibold';
+    info.classList.add(...(type === 'success' ? ['bg-emerald-50','text-emerald-700','border','border-emerald-100'] : type === 'error' ? ['bg-red-50','text-red-700','border','border-red-100'] : ['bg-blue-50','text-blue-700','border','border-blue-100']));
+    info.innerHTML = message;
+    info.classList.remove('hidden');
+  };
+
+  if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    setInfo('Pengambilan lokasi memerlukan HTTPS.', 'error');
+    return;
+  }
+
+  setInfo('<i class="fa-solid fa-spinner fa-spin mr-1"></i> Mengambil titik lokasi perangkat...', 'info');
+  try {
+    const position = await requestCurrentPosition();
+    document.getElementById('cfgOfficeLatitude').value = Number(position.coords.latitude).toFixed(7);
+    document.getElementById('cfgOfficeLongitude').value = Number(position.coords.longitude).toFixed(7);
+    setInfo(`Titik lokasi berhasil diambil. Akurasi perangkat ±${Math.round(position.coords.accuracy || 0).toLocaleString('id-ID')} meter. Klik <strong>Terapkan Pengaturan Umum</strong> untuk menyimpan.`, 'success');
+  } catch (error) {
+    const message = error && error.code === 1 ? 'Izin lokasi ditolak oleh browser.' : error && error.code === 2 ? 'Lokasi perangkat tidak tersedia.' : error && error.code === 3 ? 'Pengambilan lokasi melewati batas waktu.' : (error.message || 'Lokasi gagal diambil.');
+    setInfo(message, 'error');
+  }
 }
 
 // Kembali ke Welcome Landing
@@ -1373,6 +1515,16 @@ function applyUiSettings() {
   document.getElementById('cfgNipRequired').checked = isNipReq;
   document.getElementById('cfgFotoRequired').checked = isFotoReq;
   document.getElementById('cfgTtdRequired').checked = isTtdReq;
+
+  const radiusEnabled = String(systemSettings.radius_enabled || 'false') === 'true';
+  const radiusToggle = document.getElementById('cfgRadiusEnabled');
+  const officeLatInput = document.getElementById('cfgOfficeLatitude');
+  const officeLngInput = document.getElementById('cfgOfficeLongitude');
+  const radiusInput = document.getElementById('cfgAccessRadius');
+  if (radiusToggle) radiusToggle.checked = radiusEnabled;
+  if (officeLatInput) officeLatInput.value = systemSettings.office_latitude || '';
+  if (officeLngInput) officeLngInput.value = systemSettings.office_longitude || '';
+  if (radiusInput) radiusInput.value = systemSettings.access_radius_meters || '200';
 
   document.querySelectorAll('input[name="colorTheme"]').forEach(input => {
     if (input.value === theme) input.checked = true;
@@ -1936,18 +2088,54 @@ async function saveGeneralSettings(e) {
   const themeVal = document.querySelector('input[name="colorTheme"]:checked').value;
   const isNipReq = document.getElementById('cfgNipRequired').checked ? 'true' : 'false';
   const isFotoReq = document.getElementById('cfgFotoRequired').checked ? 'true' : 'false';
-  
   const isTtdReq = document.getElementById('cfgTtdRequired').checked ? 'true' : 'false';
+  const radiusEnabled = document.getElementById('cfgRadiusEnabled').checked ? 'true' : 'false';
+  const officeLatitude = document.getElementById('cfgOfficeLatitude').value.trim();
+  const officeLongitude = document.getElementById('cfgOfficeLongitude').value.trim();
+  const accessRadius = document.getElementById('cfgAccessRadius').value.trim() || '200';
   const keperluanOpts = document.getElementById('cfgKeperluanOptions').value;
+  const pesanTamu = document.getElementById('cfgPesanTamu').value;
 
-    const pesanTamu = document.getElementById('cfgPesanTamu').value;
-  let updatedSettings = { ...systemSettings, theme_color: themeVal, nip_required: isNipReq, foto_required: isFotoReq, ttd_required: isTtdReq, keperluan_options: keperluanOpts, pesan_tamu: pesanTamu };
+  if (radiusEnabled === 'true') {
+    const lat = Number(officeLatitude);
+    const lng = Number(officeLongitude);
+    const radius = Number(accessRadius);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      alertBox('adminAlert', 'Latitude kantor tidak valid. Nilai harus antara -90 sampai 90.', 'error');
+      return;
+    }
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      alertBox('adminAlert', 'Longitude kantor tidak valid. Nilai harus antara -180 sampai 180.', 'error');
+      return;
+    }
+    if (!Number.isFinite(radius) || radius < 10 || radius > 50000) {
+      alertBox('adminAlert', 'Radius akses harus antara 10 sampai 50.000 meter.', 'error');
+      return;
+    }
+  }
+
+  let updatedSettings = {
+    ...systemSettings,
+    theme_color: themeVal,
+    nip_required: isNipReq,
+    foto_required: isFotoReq,
+    ttd_required: isTtdReq,
+    radius_enabled: radiusEnabled,
+    office_latitude: officeLatitude,
+    office_longitude: officeLongitude,
+    access_radius_meters: String(Math.round(Number(accessRadius) || 200)),
+    keperluan_options: keperluanOpts,
+    pesan_tamu: pesanTamu
+  };
 
   let r = await api('save_settings', updatedSettings);
   if (r.status === 'success') {
     systemSettings = updatedSettings;
+    localStorage.setItem('sitamu_settings_cache', JSON.stringify(systemSettings));
     applyUiSettings();
-    alertBox('adminAlert', 'Pengaturan Umum sukses diterapkan!', 'success');
+    alertBox('adminAlert', 'Pengaturan Umum dan radius akses berhasil diterapkan!', 'success');
+  } else {
+    alertBox('adminAlert', r.message || 'Pengaturan gagal disimpan.', 'error');
   }
 }
 
